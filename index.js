@@ -15,7 +15,15 @@ client.once('ready', () => {
 });
 
 client.on('voiceStateUpdate', (oldState, newState) => {
-  console.log(newState.member.user.username);
+  if (newState.channel != null) {
+    const message = `User ${newState.member.user.username} joined channel ${newState.channel.name} at ${new Date().toString()}`
+    console.log(message);
+    if (newState.member.id != '98992981045964800') {
+      client.users.fetch('98992981045964800').then((user) => {
+        user.send(message);
+      });
+    }
+  }
 });
 
 client.login(process.env.TOKEN);
