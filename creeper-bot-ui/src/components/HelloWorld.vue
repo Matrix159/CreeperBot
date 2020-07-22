@@ -34,10 +34,20 @@
 
 <script lang="ts">
 import { Component, Prop, Vue } from 'vue-property-decorator'
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3000')
+socket.on('chat message', (value: string[]) => {
+  console.log(value)
+})
 
 @Component
 export default class HelloWorld extends Vue {
-  @Prop() private msg!: string;
+  @Prop() private msg!: string
+
+  mounted() {
+    console.log('mounted')
+  }
 }
 </script>
 
