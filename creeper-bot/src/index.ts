@@ -7,6 +7,7 @@ import socketio from 'socket.io';
 
 // DiscordJS below
 let userIDs: string[] = [];
+let clientSocket: socketio.Socket;
 
 const client = new Discord.Client({
   presence: {
@@ -24,6 +25,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
   if (newState.channel != null) {
     const message = `User ${newState?.member?.user.username} joined channel ${newState.channel.name} at ${new Date().toString()}`
     console.log(message);
+    clientSocket.emit('message', newState?.member?.user.displayAvatarURL());
    if (newState?.member?.id && !userIDs.includes(newState.member.id)) {
       userIDs.push(newState.member.id)
    }
@@ -43,6 +45,7 @@ const io = socketio(httpServer);
 
 io.on('connection', (socket) => {
   console.log('a user connected');
+  clientSocket = socket;
   socket.emit('chat message', userIDs);
 });
 httpServer.listen(3000, () => {

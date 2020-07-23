@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "pm2": "pm2 delete creeper;pm2 start src/index.ts --name creeper --watch --no-daemon -f",
     "start": "npx tsc && node dist/index.js",
     "lint": "npx eslint -c .eslintrc.json --ext .ts src"
   },
