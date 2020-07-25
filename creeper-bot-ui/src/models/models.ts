@@ -6,4 +6,5 @@ export interface User {
 export interface CreeperInfo {
   users: User[];
   totalOnline: number;
+  messages: string[];
 }

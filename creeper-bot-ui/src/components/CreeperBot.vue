@@ -1,11 +1,16 @@
 <template>
   <div class="creeper-bot">
     <div class="left-info">
-      <h3>There are {{totalOnline}} members online right now.</h3>
+      <h3>There are {{info.totalOnline}} members online right now.</h3>
+      <ul>
+        <li v-for="(message, index) in info.messages" :key="index">
+          {{message}}
+        </li>
+      </ul>
     </div>
-    <div v-if="users.length > 0" class="users">
+    <div v-if="info.users.length > 0" class="users">
       <h3>Members in voice chat</h3>
-      <div v-for="(user, index) in users" :key="index" class="user">
+      <div v-for="(user, index) in info.users" :key="index" class="user">
         <img v-bind:src="user.avatarURL" />
         <p>{{user.username}}</p>
       </div>
@@ -18,7 +23,7 @@ import { Component, Prop, Vue } from 'vue-property-decorator';
 import io from 'socket.io-client';
 import { User, CreeperInfo } from '../models/models';
 
-const socket = io('http://localhost:3000');
+const socket = io(process.env.VUE_APP_SOCKET_DOMAIN);
 
 @Component
 export default class CreeperBot extends Vue {
@@ -26,11 +31,17 @@ export default class CreeperBot extends Vue {
   img = '';
   totalOnline = 0;
   users: User[] = [];
+  info: CreeperInfo = {
+    users: [],
+    totalOnline: 0,
+    messages: []
+  };
 
   mounted() {
     console.log('mounted');
     socket.on('message', (info: CreeperInfo) => {
       console.log(info);
+      this.info = info;
       this.users = info.users;
       this.totalOnline = info.totalOnline;
     });

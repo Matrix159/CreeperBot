@@ -16,14 +16,14 @@ html, body {
 }
 #app {
   font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
+  //-webkit-font-smoothing: antialiased;
+  //-moz-osx-font-smoothing: grayscale;
   color: #e4e4e4;
   margin-bottom: 20px;
 }
 
 .app-title {
   font-family: 'Bungee', cursive;
+  text-align: center;
 }
 </style>
