@@ -9,7 +9,7 @@
       </ul>
     </div>
     <div v-if="info.users.length > 0" class="users">
-      <h3>Members in voice chat</h3>
+      <h3>Voice chat lurkers</h3>
       <div v-for="(user, index) in info.users" :key="index" class="user">
         <img v-bind:src="user.avatarURL" />
         <p>{{user.username}}</p>
@@ -19,18 +19,13 @@
 </template>
 
 <script lang="ts">
-import { Component, Prop, Vue } from 'vue-property-decorator';
+import { Component, Vue } from 'vue-property-decorator';
 import io from 'socket.io-client';
-import { User, CreeperInfo } from '../models/models';
-
-const socket = io(process.env.VUE_APP_SOCKET_DOMAIN);
+import { CreeperInfo } from '../models/models';
 
 @Component
 export default class CreeperBot extends Vue {
-  @Prop() private msg!: string;
-  img = '';
-  totalOnline = 0;
-  users: User[] = [];
+  socket?: SocketIOClient.Socket;
   info: CreeperInfo = {
     users: [],
     totalOnline: 0,
@@ -38,12 +33,12 @@ export default class CreeperBot extends Vue {
   };
 
   mounted() {
+    this.socket = io(process.env.VUE_APP_SOCKET_DOMAIN);
+    console.log(this.socket);
     console.log('mounted');
-    socket.on('message', (info: CreeperInfo) => {
+    this.socket.on('message', (info: CreeperInfo) => {
       console.log(info);
       this.info = info;
-      this.users = info.users;
-      this.totalOnline = info.totalOnline;
     });
   }
 }
@@ -53,7 +48,10 @@ export default class CreeperBot extends Vue {
 <style scoped lang="scss">
 .creeper-bot {
   display: grid;
-  grid-template-columns: 1fr minmax(min-content, 400px);
+  grid-template-columns: 2fr minmax(min-content, 1fr);
+  @media only screen and (min-width: 1000px){
+    grid-template-columns: 3fr minmax(min-content, 1fr);
+  }
   grid-template-rows: 1fr;
   grid-template-areas: "main users";
   margin: 0 20px;
@@ -68,16 +66,23 @@ export default class CreeperBot extends Vue {
     border-radius: 6px;
     box-shadow: 0 4px 8px 0 rgba(0,0,0,0.6);
     padding: 8px;
+
+    h3 {
+      margin: 4px 0 12px 0;
+      text-align: center;
+    }
   }
   .user {
     display: flex;
     margin: 10px 0;
+    &:last-of-type {
+      margin-bottom: 0;
+    }
     img {
-      width: 60px;
-      height: 60px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
     }
-
     p {
       margin: 0 0 0 6px;
       align-self: center;

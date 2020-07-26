@@ -1,8 +1,8 @@
 import Dotenv from 'dotenv';
 Dotenv.config();
 import Discord from 'discord.js';
-import { User, CreeperInfo } from './models';
-import { io, setupHttpServer } from './http';
+import { User, CreeperInfo, UserInfo } from './models';
+import { io, setupHttpServer, sessionMap } from './http';
 import socketio from 'socket.io';
 
 // DiscordJS below
@@ -15,48 +15,70 @@ let creeperInfo: CreeperInfo = {
   totalOnline: 0
 };
 
-const client = new Discord.Client({
-  presence: {
-    activity: {
-      name: "always watching you"
-    }
-  }
-});
+let client: Discord.Client;
 
 // Socket server
 setupHttpServer(() => {
-  setupDiscord();
+  client = setupDiscord();
   io.on('connection', (socket) => {
     console.log('a user connected');
     clientSocket = socket;
+    /*let sessionID;
+    clientSocket.handshake.headers.cookie.split('; ').forEach((cookie: string) => {
+      if (cookie.startsWith('sessionID')) {
+        sessionID = decodeURIComponent(cookie.split('=')[1]);
+      }
+    });
+    if (sessionID) {
+      console.log(sessionMap.get(sessionID));
+    }*/
     gatherAndSendInfo(clientSocket);
   });
 });
 
+/**
+ * Gather the full info object for the Creeper UI
+ * @param socket Socket connected to UI
+ */
 async function gatherAndSendInfo(socket: socketio.Socket) {
   if (socket) {
-    try { 
-      const guild = client.guilds.cache.first()!;
-      const fetchedMembers = await guild.members.fetch();
-      const membersInVoiceChat = guild.voiceStates.cache.filter(voiceState => !!voiceState.channel).map(voiceState => {
-        return voiceState.member!.user;
-      });
-      creeperInfo.users = membersInVoiceChat.map(member => ({
-        username: member.username,
-        avatarURL: member.displayAvatarURL()
-      }));
-      console.log(creeperInfo.users);
-      const onlineArray = fetchedMembers?.filter(member => member.presence.status === 'online');
-      // We now have a collection with all online member objects in the totalOnline variable
-      creeperInfo.totalOnline = onlineArray?.size ?? 0;
-      socket.emit('message', creeperInfo);
-    } catch(error) {
-      console.log(error);
+    let userInfo = getSession(socket);
+    console.log('Gather function userInfo ' + userInfo);
+    if (userInfo) {
+      try { 
+        const guild = client.guilds.cache.first();
+        const fetchedMembers = await guild?.members.fetch();
+        const membersInVoiceChat = guild?.voiceStates.cache.filter(voiceState => !!voiceState.channel).map(voiceState => {
+          return voiceState.member!.user;
+        });
+        creeperInfo.users = membersInVoiceChat?.map(member => ({
+          username: member.username,
+          avatarURL: member.displayAvatarURL()
+        })) ?? [];
+        console.log(creeperInfo.users);
+        const onlineArray = fetchedMembers?.filter(member => member.presence.status === 'online');
+        // We now have a collection with all online member objects in the totalOnline variable
+        creeperInfo.totalOnline = onlineArray?.size ?? 0;
+        socket.emit('message', creeperInfo);
+      } catch(error) {
+        console.log(error);
+      }
     }
   }
 }
 
-function setupDiscord() {
+/**
+ * Set up discord event listeners and login
+ */
+function setupDiscord(): Discord.Client {
+  const client = new Discord.Client({
+    presence: {
+      activity: {
+        type: 'WATCHING',
+        name: 'you always'
+      }
+    }
+  });
   client.once('ready', async () => {
     console.log('Ready!');
   });
@@ -101,4 +123,20 @@ function setupDiscord() {
   });
   
   client.login(process.env.TOKEN);
+  return client;
+}
+
+function getSession(socket: SocketIO.Socket): UserInfo | undefined {
+  let sessionID;
+  console.log(socket.handshake.headers);
+  socket.handshake.headers.cookie.split('; ').forEach((cookie: string) => {
+    if (cookie.startsWith('sessionID')) {
+      sessionID = decodeURIComponent(cookie.split('=')[1]);
+    }
+  });
+  console.log(`Get session ${sessionID}`)
+  if (sessionID) {
+    return sessionMap.get(sessionID);
+  }
+  return undefined;
 }
