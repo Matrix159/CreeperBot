@@ -2,8 +2,8 @@
   <div id="app">
     <div class="nav">
       <h1 class="app-title">CreeperBot</h1>
-      <a href="https://discord.com/api/oauth2/authorize?client_id=732331475990478870&redirect_uri=http%3A%2F%2Flocalhost%3A8080&response_type=code&scope=identify">
-        Discord Login
+      <a href="https://discord.com/api/oauth2/authorize?client_id=732331475990478870&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Flogin&response_type=code&scope=identify">
+        {{ loggedIn ? 'Logout' : 'Discord Login' }}
       </a>
     </div>
     <router-view/>
@@ -11,24 +11,12 @@
 </template>
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator';
-import axios from 'axios';
 
 @Component
 export default class App extends Vue {
-  async beforeCreate() {
-    console.log(document.cookie);
-    const code = this.$route.query.code;
-    if (code) {
-      try {
-        await axios.post('http://localhost:3000/login', { code }, {
-          withCredentials: true
-        });
-        console.log('Login hit');
-        this.$router.replace('/');
-      } catch (error) {
-        console.error(error);
-      }
-    }
+  get loggedIn() {
+    console.log(this.$store.state.loggedIn);
+    return this.$store.state.loggedIn;
   }
 
   mounted() {

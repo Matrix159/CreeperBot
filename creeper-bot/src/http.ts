@@ -1,4 +1,7 @@
 import express from 'express';
+import session from 'express-session';
+import pg from 'pg';
+import connectPgSimple from 'connect-pg-simple';
 import bodyparser from 'body-parser';
 import cors from 'cors';
 import http from 'http';
@@ -9,33 +12,52 @@ import { UserInfo, DiscordAuth } from './models';
 
 const app = express();
 const httpServer = http.createServer(app);
-export const io = socketio(httpServer);
+const pgSession = connectPgSimple(session);
 
+export const io = socketio(httpServer);
 export const sessionMap = new Map<string, UserInfo>();
+
+const pgPool = new pg.Pool({
+  connectionString: process.env.PSQL_CONNECTION_STRING,
+  ssl: true,
+});
 
 app.use(cors({
   origin: ['http://localhost:8080', 'http://localhost:3000'],
   credentials: true
 }));
 app.use(bodyparser.json());
+app.use(session({
+  store: new pgSession({
+    pool: pgPool,
+    tableName: 'session'
+  }),
+  secret: process.env.SESSION_SECRET as string,
+  resave: false,
+  cookie: { maxAge: 604800 },
+  name: 'session'
+}));
 
-app.get('/', (req, res) => res.send('Hello world!'));
+app.get('/', (req, res) => {
+  pgPool.query('SELECT * FROM session', (err, dbResponse) => {
+    console.log(dbResponse.rows[0].sess.userInfo);
+    res.sendStatus(200);
+  });
+});
 
 app.post('/login', async (req, res) => {
   console.log('Login hit');
-  // TODO: Fill out remainder of OAuth logic and session management
-  const sessionID = generateKey();
   
   const formData = 
   {
     'client_id': '732331475990478870',
     'client_secret': process.env.CLIENT_SECRET,
     'grant_type': 'authorization_code',
-    'redirect_uri': 'http://localhost:8080',
+    'redirect_uri': 'http://localhost:8080/login',
     'scope': 'identify',
     'code': req.body.code
   };
-  //console.log(req.body.code);
+
   const config = {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
@@ -51,18 +73,26 @@ app.post('/login', async (req, res) => {
       }
     });
     //console.log(userInfo.data);
-    sessionMap.set(sessionID, {
+    req.session!.cookie.maxAge = discordAuth.expires_in;
+    req.session!.userInfo = {
+      discordAuth,
+      snowflake: userInfo.data.id,
+      username: userInfo.data.username
+    };
+    console.log(`Session id ${req.sessionID}`);
+    sessionMap.set(req.sessionID!, {
       discordAuth,
       snowflake: userInfo.data.id,
       username: userInfo.data.username
     });
     //console.log(sessionMap);
-    res.cookie('sessionID', sessionID, {
+    /*res.cookie('sessionID', sessionID, {
       maxAge: sessionMap.get(sessionID)?.discordAuth.expires_in
-    });
+    });*/
     res.sendStatus(200);
     return;
   } catch (error) {
+    console.log(error);
     console.log(error.response.data);
   }
   res.sendStatus(400);
