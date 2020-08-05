@@ -1,7 +1,7 @@
 import express from 'express';
-import session from 'express-session';
+// import session from 'express-session';
 import pg from 'pg';
-import connectPgSimple from 'connect-pg-simple';
+// import connectPgSimple from 'connect-pg-simple';
 import bodyparser from 'body-parser';
 import cors from 'cors';
 import http from 'http';
@@ -9,13 +9,14 @@ import socketio from 'socket.io';
 import crypto from 'crypto';
 import axios from 'axios';
 import { UserInfo, DiscordAuth } from './models';
+import { Session } from './session';
 
 const app = express();
 const httpServer = http.createServer(app);
-const pgSession = connectPgSimple(session);
+// const pgSession = connectPgSimple(session);
 
 export const io = socketio(httpServer);
-export const sessionMap = new Map<string, UserInfo>();
+export const sessionMap = new Session<UserInfo>(renewToken);
 
 const pgPool = new pg.Pool({
   connectionString: process.env.PSQL_CONNECTION_STRING,
@@ -27,7 +28,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(bodyparser.json());
-app.use(session({
+/*app.use(session({
   store: new pgSession({
     pool: pgPool,
     tableName: 'session'
@@ -36,7 +37,7 @@ app.use(session({
   resave: false,
   cookie: { maxAge: 604800 },
   name: 'session'
-}));
+}));*/
 
 app.get('/', (req, res) => {
   pgPool.query('SELECT * FROM session', (err, dbResponse) => {
@@ -79,16 +80,22 @@ app.post('/login', async (req, res) => {
       snowflake: userInfo.data.id,
       username: userInfo.data.username
     };
-    console.log(`Session id ${req.sessionID}`);
-    sessionMap.set(req.sessionID!, {
+
+    const expireDate = new Date();
+    expireDate.setTime(expireDate.getTime() + discordAuth.expires_in);
+
+    const sessionId = generateKey();
+
+    sessionMap.set(sessionId, {
       discordAuth,
       snowflake: userInfo.data.id,
-      username: userInfo.data.username
+      username: userInfo.data.username,
+      expiresBy: expireDate
     });
-    //console.log(sessionMap);
-    /*res.cookie('sessionID', sessionID, {
-      maxAge: sessionMap.get(sessionID)?.discordAuth.expires_in
-    });*/
+
+    res.cookie('sessionID', sessionId, {
+      maxAge: discordAuth.expires_in
+    });
     res.sendStatus(200);
     return;
   } catch (error) {
@@ -98,8 +105,10 @@ app.post('/login', async (req, res) => {
   res.sendStatus(400);
 });
 
-async function renewToken() {
-
+async function renewToken(): Promise<DiscordAuth> {
+  return new Promise((resolve, reject) => {
+    resolve({} as DiscordAuth);
+ });
 }
 
 export const setupHttpServer = (callback: () => void) => {

@@ -42,7 +42,7 @@ setupHttpServer(() => {
  */
 async function gatherAndSendInfo(socket: socketio.Socket) {
   if (socket) {
-    let userInfo = getSession(socket);
+    let userInfo = await getSession(socket);
     console.log('Gather function userInfo ' + userInfo);
     if (userInfo) {
       try { 
@@ -126,7 +126,7 @@ function setupDiscord(): Discord.Client {
   return client;
 }
 
-function getSession(socket: SocketIO.Socket): UserInfo | undefined {
+async function getSession(socket: SocketIO.Socket): Promise<UserInfo | undefined> {
   let sessionID;
   console.log(socket.handshake.headers);
   socket.handshake.headers.cookie.split('; ').forEach((cookie: string) => {
@@ -136,7 +136,7 @@ function getSession(socket: SocketIO.Socket): UserInfo | undefined {
   });
   console.log(`Get session ${sessionID}`)
   if (sessionID) {
-    return sessionMap.get(sessionID);
+    return await sessionMap.get(sessionID);
   }
   return undefined;
 }

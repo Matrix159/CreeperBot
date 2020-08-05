@@ -19,6 +19,7 @@ export interface DiscordAuth {
 
 export interface UserInfo {
   discordAuth: DiscordAuth;
+  expiresBy: Date;
   username: string;
   snowflake: string;
 }
