@@ -4,9 +4,8 @@
   "description": "Tracks the activity of selected discord friends",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "pm2": "pm2 delete creeper;pm2 start src/index.ts --name creeper",
-    "start": "node dist/index.js",
+    "start": "tsc && node dist/index.js",
     "dev": "./node_modules/.bin/tsc-watch --onSuccess \"node ./dist/index.js\"",
     "lint": "npx eslint -c .eslintrc.json --ext .ts src"
   },

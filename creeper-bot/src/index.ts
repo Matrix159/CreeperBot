@@ -1,15 +1,14 @@
 import Dotenv from 'dotenv';
 Dotenv.config();
 import Discord from 'discord.js';
-import { User, CreeperInfo, UserInfo } from './models';
+import { CreeperInfo, UserInfo } from './models';
 import { io, setupHttpServer, sessionMap } from './http';
 import socketio from 'socket.io';
 
 import { watchUser } from './database';
-// watchUser('test', 'test2');
 
 // DiscordJS below
-let userIDs: string[] = [];
+// let userIDs: string[] = [];
 let clientSocket: socketio.Socket;
 
 let creeperInfo: CreeperInfo = {
@@ -18,7 +17,7 @@ let creeperInfo: CreeperInfo = {
   totalOnline: 0
 };
 
-const watchedUserMap: Map<string, string> = new Map<string, string>();
+// const watchedUserMap: Map<string, string> = new Map<string, string>();
 
 let client: Discord.Client;
 

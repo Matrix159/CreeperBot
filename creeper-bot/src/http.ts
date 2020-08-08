@@ -20,12 +20,12 @@ app.use(cors({
 }));
 app.use(bodyparser.json());
 
-app.get('/', (req, res) => {
-  /*pgPool.query('SELECT * FROM session', (err, dbResponse) => {
+/*app.get('/', (req, res) => {
+  pgPool.query('SELECT * FROM session', (err, dbResponse) => {
     console.log(dbResponse.rows[0]);
     res.sendStatus(200);
-  });*/
-});
+  });
+});*/
 
 app.post('/login', async (req, res) => {
   console.log('Login hit');
