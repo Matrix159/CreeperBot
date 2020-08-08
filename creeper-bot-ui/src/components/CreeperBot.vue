@@ -10,7 +10,7 @@
     </div>
     <div v-if="info.users.length > 0" class="users">
       <h3>Voice chat lurkers</h3>
-      <div v-for="(user, index) in info.users" :key="index" class="user">
+      <div v-for="(user, index) in info.users" :key="index" @click="watchUser(user.snowflake)" class="user">
         <img v-bind:src="user.avatarURL" />
         <p>{{user.username}}</p>
       </div>
@@ -41,6 +41,11 @@ export default class CreeperBot extends Vue {
       this.info = info;
     });
   }
+
+  watchUser(snowflake: string) {
+    console.log('watch user clicked');
+    this.socket!.emit('watch', snowflake);
+  }
 }
 </script>
 
@@ -66,6 +71,7 @@ export default class CreeperBot extends Vue {
     border-radius: 6px;
     box-shadow: 0 4px 8px 0 rgba(0,0,0,0.6);
     padding: 8px;
+    margin-top: 16px;
 
     h3 {
       margin: 4px 0 12px 0;

@@ -18,7 +18,7 @@ export class Session<T extends SessionValue> extends Map<string, T> {
     const value = super.get(key);
 
     // If the session value has expired, attempt to renew it
-    if (value && value.expiresBy > new Date()) {
+    if (value && value.expiresBy < new Date()) {
       const newDiscordAuth = await this.renewFunction(value.discordAuth.refresh_token);
       value.discordAuth = newDiscordAuth;
       const expireDate = new Date();

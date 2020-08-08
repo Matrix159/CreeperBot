@@ -18,6 +18,9 @@ const store = new Vuex.Store({
     },
     login (state) {
       state.loggedIn = true;
+    },
+    logout(state) {
+      state.loggedIn = false;
     }
   }
 });

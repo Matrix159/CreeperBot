@@ -1,6 +1,7 @@
 export interface User {
   avatarURL: string;
   username: string;
+  snowflake: string;
 }
 
 export interface CreeperInfo {

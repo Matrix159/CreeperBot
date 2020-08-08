@@ -1,10 +1,8 @@
 <template>
   <div id="app">
-    <div class="nav">
+    <div v-if="loggedIn" class="nav">
       <h1 class="app-title">CreeperBot</h1>
-      <a href="https://discord.com/api/oauth2/authorize?client_id=732331475990478870&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Flogin&response_type=code&scope=identify">
-        {{ loggedIn ? 'Logout' : 'Discord Login' }}
-      </a>
+      <a v-if="loggedIn" href="javascript:void(0)" @click="logout($event)">Logout</a>
     </div>
     <router-view/>
   </div>
@@ -19,8 +17,25 @@ export default class App extends Vue {
     return this.$store.state.loggedIn;
   }
 
+  beforeMount() {
+    // this.$store.commit('login');
+    const loggedIn = document.cookie.split('; ').find(row => row.startsWith('sessionID'));
+    if (loggedIn) {
+      // Tell the vuex store that we are logged in
+      console.log('we are logged in');
+      this.$store.commit('login');
+    }
+  }
+
   mounted() {
     console.log('app loaded');
+  }
+
+  logout(event: Event) {
+    event.preventDefault();
+    document.cookie = 'sessionID=; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    this.$store.commit('logout');
+    this.$router.push('/login');
   }
 }
 </script>
@@ -28,17 +43,17 @@ export default class App extends Vue {
 @import url('https://fonts.googleapis.com/css2?family=Bungee&display=swap');
 
 html, body {
-  min-height: 100vh;
+  min-height: 100%;
   margin: 0;
   padding: 0;
   background-color: #36393F;
 }
 #app {
+  height: 100vh;
   font-family: Avenir, Helvetica, Arial, sans-serif;
   //-webkit-font-smoothing: antialiased;
   //-moz-osx-font-smoothing: grayscale;
   color: #e4e4e4;
-  margin-bottom: 20px;
 }
 .nav {
   display: grid;

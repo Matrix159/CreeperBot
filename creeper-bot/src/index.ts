@@ -5,6 +5,9 @@ import { User, CreeperInfo, UserInfo } from './models';
 import { io, setupHttpServer, sessionMap } from './http';
 import socketio from 'socket.io';
 
+import { watchUser } from './database';
+// watchUser('test', 'test2');
+
 // DiscordJS below
 let userIDs: string[] = [];
 let clientSocket: socketio.Socket;
@@ -15,14 +18,24 @@ let creeperInfo: CreeperInfo = {
   totalOnline: 0
 };
 
+const watchedUserMap: Map<string, string> = new Map<string, string>();
+
 let client: Discord.Client;
 
 // Socket server
 setupHttpServer(() => {
   client = setupDiscord();
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     console.log('a user connected');
     clientSocket = socket;
+
+    clientSocket.on('watch', async (snowflakeToWatch: string) => {
+      console.log('watch received');
+      const userInfo = await getSession(clientSocket);
+      if (userInfo) {
+        watchUser(userInfo.snowflake, snowflakeToWatch);
+      }
+    });
     /*let sessionID;
     clientSocket.handshake.headers.cookie.split('; ').forEach((cookie: string) => {
       if (cookie.startsWith('sessionID')) {
@@ -32,7 +45,7 @@ setupHttpServer(() => {
     if (sessionID) {
       console.log(sessionMap.get(sessionID));
     }*/
-    gatherAndSendInfo(clientSocket);
+    await gatherAndSendInfo(clientSocket);
   });
 });
 
@@ -53,7 +66,8 @@ async function gatherAndSendInfo(socket: socketio.Socket) {
         });
         creeperInfo.users = membersInVoiceChat?.map(member => ({
           username: member.username,
-          avatarURL: member.displayAvatarURL()
+          avatarURL: member.displayAvatarURL(),
+          snowflake: member.id
         })) ?? [];
         console.log(creeperInfo.users);
         const onlineArray = fetchedMembers?.filter(member => member.presence.status === 'online');
@@ -136,7 +150,7 @@ async function getSession(socket: SocketIO.Socket): Promise<UserInfo | undefined
   });
   console.log(`Get session ${sessionID}`)
   if (sessionID) {
-    return await sessionMap.get(sessionID);
+    return await sessionMap.getRenewAsync(sessionID);
   }
   return undefined;
 }

@@ -1,6 +1,9 @@
+import { Socket } from 'socket.io';
+
 export interface User {
   avatarURL: string;
   username: string;
+  snowflake: string;
 }
 
 export interface CreeperInfo {
@@ -22,4 +25,5 @@ export interface UserInfo {
   expiresBy: Date;
   username: string;
   snowflake: string;
+  socket?: Socket;
 }
