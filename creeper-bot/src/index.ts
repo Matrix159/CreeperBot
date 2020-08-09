@@ -5,7 +5,7 @@ import { CreeperInfo, UserInfo } from './models';
 import { io, setupHttpServer, sessionMap } from './http';
 import socketio from 'socket.io';
 
-import { watchUser } from './database';
+import { watchUser, getUsersWatching } from './database';
 
 // DiscordJS below
 // let userIDs: string[] = [];
@@ -35,15 +35,7 @@ setupHttpServer(() => {
         watchUser(userInfo.snowflake, snowflakeToWatch);
       }
     });
-    /*let sessionID;
-    clientSocket.handshake.headers.cookie.split('; ').forEach((cookie: string) => {
-      if (cookie.startsWith('sessionID')) {
-        sessionID = decodeURIComponent(cookie.split('=')[1]);
-      }
-    });
-    if (sessionID) {
-      console.log(sessionMap.get(sessionID));
-    }*/
+
     await gatherAndSendInfo(clientSocket);
   });
 });
@@ -96,7 +88,7 @@ function setupDiscord(): Discord.Client {
     console.log('Ready!');
   });
   
-  client.on('voiceStateUpdate', (oldState, newState) => {
+  client.on('voiceStateUpdate', async (oldState, newState) => {
     const newUserChannel = newState.channel;
     const oldUserChannel = oldState.channel;
   
@@ -105,6 +97,13 @@ function setupDiscord(): Discord.Client {
       // User Joins a voice channel
       const message = `User ${newState?.member?.user.username} joined channel ${newUserChannel.name} at ${new Date().toString()}`;
       creeperInfo.messages.push(message);
+
+      const usersWatching = await getUsersWatching(newState?.member?.user?.id || '');
+      usersWatching.forEach(async userWatching => {
+        console.log('Sending message to user that is watching');
+        const user = await client.users.fetch(userWatching);
+        user.send(message);
+      });
       //if (newState?.member?.id != '98992981045964800') {
         /*client.users.fetch('98992981045964800').then((user) => {
           user.send(message);
