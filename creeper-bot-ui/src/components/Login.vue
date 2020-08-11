@@ -24,7 +24,7 @@ export default class Login extends Vue {
   mounted() {
     console.log(document.cookie);
     if (this.code) {
-      axios.post('http://localhost:3000/login', { code: this.code }, { withCredentials: true }).then(() => {
+      axios.post(`http://${process.env.VUE_APP_SOCKET_DOMAIN}/login`, { code: this.code }, { withCredentials: true }).then(() => {
         console.log('Login hit');
         this.$store.commit('login');
         this.$router.replace('/bot');
