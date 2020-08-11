@@ -5,7 +5,7 @@ import { CreeperInfo, UserInfo } from './models';
 import { io, setupHttpServer, sessionMap } from './http';
 import socketio from 'socket.io';
 
-import { watchUser, getUsersWatching } from './database';
+import { watchUser, unwatchUser, getUsersWatching, getWatchedUsers} from './database';
 
 // DiscordJS below
 // let userIDs: string[] = [];
@@ -36,6 +36,14 @@ setupHttpServer(() => {
       }
     });
 
+    clientSocket.on('unwatch', async (snowflakeToUnwatch: string) => {
+      console.log('unwatch received');
+      const userInfo = await getSession(clientSocket);
+      if (userInfo) {
+        unwatchUser(userInfo.snowflake, snowflakeToUnwatch);
+      }
+    });
+
     await gatherAndSendInfo(clientSocket);
   });
 });
@@ -52,13 +60,15 @@ async function gatherAndSendInfo(socket: socketio.Socket) {
       try { 
         const guild = client.guilds.cache.first();
         const fetchedMembers = await guild?.members.fetch();
-        const membersInVoiceChat = guild?.voiceStates.cache.filter(voiceState => !!voiceState.channel).map(voiceState => {
+        /*const membersInVoiceChat = guild?.voiceStates.cache.filter(voiceState => !!voiceState.channel).map(voiceState => {
           return voiceState.member!.user;
-        });
-        creeperInfo.users = membersInVoiceChat?.map(member => ({
-          username: member.username,
-          avatarURL: member.displayAvatarURL(),
-          snowflake: member.id
+        });*/
+        const watchedUsers = await getWatchedUsers();
+        creeperInfo.users = fetchedMembers?.map(member => ({
+          username: member.user.username,
+          avatarURL: member.user.displayAvatarURL(),
+          snowflake: member.user.id,
+          watched: watchedUsers.includes(member.user.id)
         })) ?? [];
         console.log(creeperInfo.users);
         const onlineArray = fetchedMembers?.filter(member => member.presence.status === 'online');

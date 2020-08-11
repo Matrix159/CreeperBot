@@ -9,19 +9,20 @@
       </ul>
     </div>
     <div v-if="info.users.length > 0" class="users">
-      <h3>Voice chat lurkers</h3>
-      <div v-for="(user, index) in info.users" :key="index" @click="watchUser(user.snowflake)" class="user">
+      <h3>Users to creep on</h3>
+      <div v-for="(user, index) in info.users" :key="index" @click="toggleWatch(user)" class="user" :class="{ watched: user.watched }">
         <img v-bind:src="user.avatarURL" />
         <p>{{user.username}}</p>
       </div>
     </div>
+    <iframe src="https://discordapp.com/widget?id=540896900451139606&theme=dark" width="350" height="500" allowtransparency="true" frameborder="0" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"></iframe>
   </div>
 </template>
 
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator';
 import io from 'socket.io-client';
-import { CreeperInfo } from '../models/models';
+import { CreeperInfo, User } from '../models/models';
 
 @Component
 export default class CreeperBot extends Vue {
@@ -42,9 +43,10 @@ export default class CreeperBot extends Vue {
     });
   }
 
-  watchUser(snowflake: string) {
+  toggleWatch(user: User) {
     console.log('watch user clicked');
-    this.socket!.emit('watch', snowflake);
+    this.socket!.emit(user.watched ? 'unwatch' : 'watch', user.snowflake);
+    user.watched = !user.watched;
   }
 }
 </script>
@@ -81,6 +83,7 @@ export default class CreeperBot extends Vue {
   .user {
     display: flex;
     margin: 10px 0;
+    cursor: pointer;
     &:last-of-type {
       margin-bottom: 0;
     }
@@ -93,6 +96,12 @@ export default class CreeperBot extends Vue {
       margin: 0 0 0 6px;
       align-self: center;
     }
+  }
+
+  div.watched {
+    border: 2px solid #3b9e7e;
+    border-radius: 30px;
+    box-shadow: 0px 2px 6px 5px rgb(0, 0, 0, 0.4);
   }
 }
 </style>
