@@ -15,7 +15,7 @@ export const io = socketio(httpServer);
 export const sessionMap = new Session<UserInfo>(renewToken);
 
 app.use(cors({
-  origin: ['http://localhost:8080', 'http://localhost:3000'],
+  origin: ['http://localhost:8080', 'http://localhost:3000', 'http://192.168.86.138:8080'],
   credentials: true
 }));
 app.use(bodyparser.json());
@@ -35,7 +35,7 @@ app.post('/login', async (req, res) => {
     'client_id': '732331475990478870',
     'client_secret': process.env.CLIENT_SECRET,
     'grant_type': 'authorization_code',
-    'redirect_uri': 'http://localhost:8080/login',
+    'redirect_uri': process.env.REDIRECT_URI,
     'scope': 'identify',
     'code': req.body.code
   };

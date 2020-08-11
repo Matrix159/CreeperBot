@@ -2,7 +2,7 @@
   <div class="container">
     <div v-if="code.length === 0" class="sub-container">
       <p>Login to discord to use CreeperBot</p>
-      <a href="https://discord.com/api/oauth2/authorize?client_id=732331475990478870&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Flogin&response_type=code&scope=identify">Login</a>
+      <a :href="discordLoginURL">Login</a>
     </div>
     <h1 v-else>Loggin you in...</h1>
   </div>
@@ -15,9 +15,10 @@ import axios from 'axios';
 @Component
 export default class Login extends Vue {
   code = '';
-
+  discordLoginURL = '';
   beforeMount() {
     this.code = this.$route.query.code as string || '';
+    this.discordLoginURL = process.env.VUE_APP_DISCORD_LOGIN_URL;
   }
 
   mounted() {
