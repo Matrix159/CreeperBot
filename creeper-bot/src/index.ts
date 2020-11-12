@@ -19,7 +19,7 @@ let creeperInfo: CreeperInfo = {
 };
 
 let dispatcher: Discord.StreamDispatcher;
-// small change to test webhook
+// small change to test webhookk
 // const watchedUserMap: Map<string, string> = new Map<string, string>();
 
 let client: Discord.Client;
