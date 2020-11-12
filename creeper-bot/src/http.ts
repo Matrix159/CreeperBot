@@ -20,17 +20,14 @@ app.use(cors({
 }));
 app.use(bodyparser.json());
 
-/*app.get('/', (req, res) => {
-  pgPool.query('SELECT * FROM session', (err, dbResponse) => {
-    console.log(dbResponse.rows[0]);
-    res.sendStatus(200);
-  });
-});*/
+app.get('/', (req, res) => {
+  res.send("test");
+});
 
 app.post('/login', async (req, res) => {
   console.log('Login hit');
-  
-  const formData = 
+
+  const formData =
   {
     'client_id': '732331475990478870',
     'client_secret': process.env.CLIENT_SECRET,
@@ -84,7 +81,7 @@ async function renewToken(refreshToken: string): Promise<DiscordAuth> {
       'Content-Type': 'application/x-www-form-urlencoded'
     }
   }
-  const formData = 
+  const formData =
   {
     'client_id': '732331475990478870',
     'client_secret': process.env.CLIENT_SECRET,
@@ -93,15 +90,15 @@ async function renewToken(refreshToken: string): Promise<DiscordAuth> {
     'redirect_uri': 'http://localhost:8080/login',
     'scope': 'identify'
   };
-  
+
   return await axios.post('https://discord.com/api/oauth2/token', getQueryString(formData), config)
 }
 
-export const setupHttpServer = (callback: () => void) => {
+export const setupHttpServer = async () => {
   httpServer.listen(3000, () => {
     console.log('listening on *:3000');
   });
-  callback();
+  return;
 };
 
 function generateKey() {

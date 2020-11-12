@@ -4,6 +4,7 @@ import Discord from 'discord.js';
 import { CreeperInfo, UserInfo } from './models';
 import { io, setupHttpServer, sessionMap } from './http';
 import socketio from 'socket.io';
+import ytdl from 'ytdl-core';
 
 import { watchUser, unwatchUser, getUsersWatching, getWatchedUsers} from './database';
 
@@ -17,13 +18,19 @@ let creeperInfo: CreeperInfo = {
   totalOnline: 0
 };
 
+let dispatcher: Discord.StreamDispatcher;
+
 // const watchedUserMap: Map<string, string> = new Map<string, string>();
 
 let client: Discord.Client;
 
 // Socket server
-setupHttpServer(() => {
-  client = setupDiscord();
+(async () => {
+  // Setup the http server for /login and handling SQL queries
+  await setupHttpServer();
+
+  // Initial discord bot setup
+  client = await setupDiscord();
   io.on('connection', async (socket) => {
     console.log('a user connected');
     clientSocket = socket;
@@ -32,7 +39,7 @@ setupHttpServer(() => {
       console.log('watch received');
       const userInfo = await getSession(clientSocket);
       if (userInfo) {
-        watchUser(userInfo.snowflake, snowflakeToWatch);
+        await watchUser(userInfo.snowflake, snowflakeToWatch);
       }
     });
 
@@ -40,13 +47,23 @@ setupHttpServer(() => {
       console.log('unwatch received');
       const userInfo = await getSession(clientSocket);
       if (userInfo) {
-        unwatchUser(userInfo.snowflake, snowflakeToUnwatch);
+        await unwatchUser(userInfo.snowflake, snowflakeToUnwatch);
+      }
+    });
+
+    clientSocket.on('play-pause',  (event) => {
+      if (dispatcher) {
+        if (!event.playing) {
+          dispatcher.resume();
+        } else {
+          dispatcher.pause();
+        }
       }
     });
 
     await gatherAndSendInfo(clientSocket);
   });
-});
+})();
 
 /**
  * Gather the full info object for the Creeper UI
@@ -56,8 +73,8 @@ async function gatherAndSendInfo(socket: socketio.Socket) {
   if (socket) {
     let userInfo = await getSession(socket);
     console.log('Gather function userInfo ' + userInfo);
-    if (userInfo) {
-      try { 
+    // if (userInfo) {
+      try {
         const guild = client.guilds.cache.first();
         const fetchedMembers = await guild?.members.fetch();
         /*const membersInVoiceChat = guild?.voiceStates.cache.filter(voiceState => !!voiceState.channel).map(voiceState => {
@@ -78,14 +95,14 @@ async function gatherAndSendInfo(socket: socketio.Socket) {
       } catch(error) {
         console.log(error);
       }
-    }
+    // }
   }
 }
 
 /**
  * Set up discord event listeners and login
  */
-function setupDiscord(): Discord.Client {
+async function setupDiscord(): Promise<Discord.Client> {
   const client = new Discord.Client({
     presence: {
       activity: {
@@ -97,11 +114,26 @@ function setupDiscord(): Discord.Client {
   client.once('ready', async () => {
     console.log('Ready!');
   });
-  
+
+  client.on('message', async message => {
+    // Voice only works in guilds, if the message does not come from a guild,
+    // we ignore it
+    if (!message.guild) return;
+
+    if (message.content === '/join') {
+      // Only try to join the sender's voice channel if they are in one themselves
+      if (message.member?.voice.channel) {
+        const connection = await message.member.voice.channel.join();
+        dispatcher = connection.play(ytdl('https://www.youtube.com/watch?v=mWMH7XISu68', { filter: 'audioonly' }));
+        clientSocket.emit('music-start');
+      }
+    }
+  });
+
   client.on('voiceStateUpdate', async (oldState, newState) => {
     const newUserChannel = newState.channel;
     const oldUserChannel = oldState.channel;
-  
+
     if(oldUserChannel == undefined && newUserChannel != undefined) {
       console.log("User joined");
       // User Joins a voice channel
@@ -109,17 +141,17 @@ function setupDiscord(): Discord.Client {
       creeperInfo.messages.push(message);
 
       const usersWatching = await getUsersWatching(newState?.member?.user?.id || '');
-      usersWatching.forEach(async userWatching => {
+      for (const userWatching of usersWatching) {
         console.log('Sending message to user that is watching');
         const user = await client.users.fetch(userWatching);
-        user.send(message);
-      });
+        await user.send(message);
+      }
       //if (newState?.member?.id != '98992981045964800') {
         /*client.users.fetch('98992981045964800').then((user) => {
           user.send(message);
         });*/
       //}
-      gatherAndSendInfo(clientSocket);
+      await gatherAndSendInfo(clientSocket);
     } else if(newUserChannel == undefined){
       console.log("User left")
       // User leaves a voice channel
@@ -128,9 +160,9 @@ function setupDiscord(): Discord.Client {
       /*client.users.fetch('98992981045964800').then((user) => {
         user.send(message);
       });*/
-      gatherAndSendInfo(clientSocket);
+      await gatherAndSendInfo(clientSocket);
     }
-  
+
     /*if (newState.channel != null) {
       const message = `User ${newState?.member?.user.username} joined channel ${newState.channel.name} at ${new Date().toString()}`
       console.log(message);
@@ -143,8 +175,8 @@ function setupDiscord(): Discord.Client {
      }
     }*/
   });
-  
-  client.login(process.env.TOKEN);
+
+  await client.login(process.env.TOKEN);
   return client;
 }
 

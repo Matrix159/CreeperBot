@@ -2,7 +2,9 @@ import pg from 'pg';
 
 const pgPool = new pg.Pool({
   connectionString: process.env.PSQL_CONNECTION_STRING,
-  ssl: true,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 export async function watchUser(watcher: string, watchee: string) {
