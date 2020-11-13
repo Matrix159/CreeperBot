@@ -120,11 +120,11 @@ async function setupDiscord(): Promise<Discord.Client> {
     // we ignore it
     if (!message.guild) return;
 
-    if (message.content === '/join') {
+    if (message.content.startsWith('/join')) {
       // Only try to join the sender's voice channel if they are in one themselves
       if (message.member?.voice.channel) {
         const connection = await message.member.voice.channel.join();
-        dispatcher = connection.play(ytdl('https://www.youtube.com/watch?v=OeFGfSCiV_0', { filter: 'audioonly' }));
+        dispatcher = connection.play(ytdl(message.content.split(" ")[1], { filter: 'audioonly' }));
         clientSocket.emit('music-start');
       }
     }
