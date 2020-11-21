@@ -7,10 +7,16 @@ export interface User {
   watched: boolean;
 }
 
-export interface CreeperInfo {
+export interface Guild {
+  id: string;
   users: User[];
   totalOnline: number;
+  guildImage?: string;
+}
+
+export interface CreeperInfo {
   messages: string[];
+  guilds: Guild[];
 }
 
 export interface DiscordAuth {
@@ -22,9 +28,9 @@ export interface DiscordAuth {
 }
 
 export interface UserInfo {
-  discordAuth: DiscordAuth;
-  expiresBy: Date;
+  // discordAuth: DiscordAuth;
+  // expiresBy: Date;
   username: string;
   snowflake: string;
-  socket?: Socket;
+  socket: Socket;
 }

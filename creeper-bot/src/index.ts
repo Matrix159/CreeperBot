@@ -1,28 +1,28 @@
 import Dotenv from 'dotenv';
 Dotenv.config();
 import Discord from 'discord.js';
-import { CreeperInfo, UserInfo } from './models';
-import { io, setupHttpServer, sessionMap } from './http';
-import socketio from 'socket.io';
+import { Guild, UserInfo } from './models';
+import { creeperInfo } from './state';
+import { io, setupHttpServer } from './http';
+import { Socket } from 'socket.io';
 import ytdl from 'ytdl-core';
-
 import { watchUser, unwatchUser, getUsersWatching, getWatchedUsers} from './database';
-
-// DiscordJS below
-// let userIDs: string[] = [];
-let clientSocket: socketio.Socket;
-
-let creeperInfo: CreeperInfo = {
-  users: [],
-  messages: [],
-  totalOnline: 0
-};
-
-let dispatcher: Discord.StreamDispatcher;
-// small change to test webhookk
-// const watchedUserMap: Map<string, string> = new Map<string, string>();
+import socketioJwt from 'socketio-jwt';
+import Timeout = NodeJS.Timeout;
 
 let client: Discord.Client;
+
+/** User snowflake -> UserInfo */
+const socketMap: Map<string, UserInfo> = new Map();
+/** Guild ID -> Discord.StreamDispatcher */
+const dispatcherMap: Map<string, Discord.StreamDispatcher> = new Map();
+
+interface DiscordSocket extends Socket {
+  decoded_token: {
+    snowflake: string,
+    username: string,
+  }
+}
 
 // Socket server
 (async () => {
@@ -31,27 +31,39 @@ let client: Discord.Client;
 
   // Initial discord bot setup
   client = await setupDiscord();
-  io.on('connection', async (socket) => {
-    console.log('a user connected');
-    clientSocket = socket;
 
-    clientSocket.on('watch', async (snowflakeToWatch: string) => {
+  // set authorization for socket.io
+  io.use(socketioJwt.authorize({
+    secret: process.env.JWT_SECRET as string,
+    handshake: true
+  }));
+  io.on('connection', async (socket: DiscordSocket) => {
+    // @ts-ignore
+    socketMap.set(socket.decoded_token.snowflake, {
+      snowflake: socket.decoded_token.snowflake,
+      username: socket.decoded_token.username,
+      socket: socket
+    });
+    console.log(socketMap.keys());
+
+    const user = socketMap.get(socket.decoded_token.snowflake);
+
+    socket.on('watch', async (snowflakeToWatch: string) => {
       console.log('watch received');
-      const userInfo = await getSession(clientSocket);
-      if (userInfo) {
-        await watchUser(userInfo.snowflake, snowflakeToWatch);
+      if (user) {
+        await watchUser(user.snowflake, snowflakeToWatch);
       }
     });
 
-    clientSocket.on('unwatch', async (snowflakeToUnwatch: string) => {
+    socket.on('unwatch', async (snowflakeToUnwatch: string) => {
       console.log('unwatch received');
-      const userInfo = await getSession(clientSocket);
-      if (userInfo) {
-        await unwatchUser(userInfo.snowflake, snowflakeToUnwatch);
+      if (user) {
+        await unwatchUser(user.snowflake, snowflakeToUnwatch);
       }
     });
 
-    clientSocket.on('play-pause',  (event) => {
+    socket.on('play-pause',  (event) => {
+      const dispatcher = dispatcherMap.get(event.guildId);
       if (dispatcher) {
         if (!event.playing) {
           dispatcher.resume();
@@ -61,41 +73,51 @@ let client: Discord.Client;
       }
     });
 
-    await gatherAndSendInfo(clientSocket);
+    socket.on('volume-change', (event) => {
+      const dispatcher = dispatcherMap.get(event.guildId);
+      if (dispatcher) {
+        console.log(event.volume / 100);
+        dispatcher.setVolume(event.volume / 100);
+      }
+    });
+
+    await gatherAndSendInfo(socket.decoded_token.snowflake);
   });
 })();
 
 /**
  * Gather the full info object for the Creeper UI
- * @param socket Socket connected to UI
+ * @param snowflake Unique ID of discord user
  */
-async function gatherAndSendInfo(socket: socketio.Socket) {
-  if (socket) {
-    let userInfo = await getSession(socket);
-    console.log('Gather function userInfo ' + userInfo);
-    // if (userInfo) {
-      try {
-        const guild = client.guilds.cache.first();
+async function gatherAndSendInfo(snowflake: string) {
+  let userInfo = socketMap.get(snowflake);
+  console.log('Gather function userInfo ' + userInfo);
+  if (userInfo) {
+    try {
+      creeperInfo.guilds = [];
+      for (const [id, guild] of client.guilds.cache) {
         const fetchedMembers = await guild?.members.fetch();
         /*const membersInVoiceChat = guild?.voiceStates.cache.filter(voiceState => !!voiceState.channel).map(voiceState => {
           return voiceState.member!.user;
         });*/
         const watchedUsers = await getWatchedUsers();
-        creeperInfo.users = fetchedMembers?.map(member => ({
-          username: member.user.username,
-          avatarURL: member.user.displayAvatarURL(),
-          snowflake: member.user.id,
-          watched: watchedUsers.includes(member.user.id)
-        })) ?? [];
-        console.log(creeperInfo.users);
-        const onlineArray = fetchedMembers?.filter(member => member.presence.status === 'online');
-        // We now have a collection with all online member objects in the totalOnline variable
-        creeperInfo.totalOnline = onlineArray?.size ?? 0;
-        socket.emit('message', creeperInfo);
-      } catch(error) {
-        console.log(error);
+
+        creeperInfo.guilds.push({
+          id,
+          users: fetchedMembers?.map(member => ({
+            username: member.user.username,
+            avatarURL: member.user.displayAvatarURL(),
+            snowflake: member.user.id,
+            watched: watchedUsers.includes(member.user.id)
+          })) ?? [],
+          totalOnline: fetchedMembers?.filter(member => member.presence.status === 'online')?.size ?? 0,
+          guildImage: guild.iconURL({ size: 128, dynamic: true }) ?? undefined
+        } as Guild);
+        userInfo.socket.emit('message', creeperInfo);
       }
-    // }
+    } catch(error) {
+      console.log(error);
+    }
   }
 }
 
@@ -122,10 +144,33 @@ async function setupDiscord(): Promise<Discord.Client> {
 
     if (message.content.startsWith('/join')) {
       // Only try to join the sender's voice channel if they are in one themselves
-      if (message.member?.voice.channel) {
-        const connection = await message.member.voice.channel.join();
-        dispatcher = connection.play(ytdl(message.content.split(" ")[1], { filter: 'audioonly' }));
-        clientSocket.emit('music-start');
+      if (message.member?.voice.channel && message.guild?.id) {
+        try {
+          const connection = await message.member.voice.channel.join();
+          const dispatcher = connection.play(ytdl(message.content.split(" ")[1], { filter: 'audioonly' }));
+
+          let timeout: Timeout|undefined;
+          dispatcher.on('speaking', speaking =>  {
+            if (!speaking) {
+              console.log('Speaking false');
+              timeout = setTimeout(() => {
+                connection.disconnect();
+                dispatcherMap.delete(message.guild!.id);
+                console.log('Left voice channel');
+              }, 5* 60 * 1000)
+            } else {
+              if (timeout) {
+                console.log('Clearing timeout');
+                clearTimeout(timeout);
+                timeout = undefined;
+              }
+            }
+          });
+          dispatcherMap.set(message.guild.id, dispatcher);
+          socketMap.get(message.member.user.id)?.socket.emit('music-start', message.guild.id);
+        } catch (error) {
+          console.log(error);
+        }
       }
     }
   });
@@ -147,11 +192,11 @@ async function setupDiscord(): Promise<Discord.Client> {
         await user.send(message);
       }
       //if (newState?.member?.id != '98992981045964800') {
-        /*client.users.fetch('98992981045964800').then((user) => {
-          user.send(message);
-        });*/
+      /*client.users.fetch('98992981045964800').then((user) => {
+        user.send(message);
+      });*/
       //}
-      await gatherAndSendInfo(clientSocket);
+      // await gatherAndSendInfo(clientSocket);
     } else if(newUserChannel == undefined){
       console.log("User left")
       // User leaves a voice channel
@@ -160,7 +205,7 @@ async function setupDiscord(): Promise<Discord.Client> {
       /*client.users.fetch('98992981045964800').then((user) => {
         user.send(message);
       });*/
-      await gatherAndSendInfo(clientSocket);
+      // await gatherAndSendInfo(clientSocket);
     }
 
     /*if (newState.channel != null) {
@@ -178,19 +223,4 @@ async function setupDiscord(): Promise<Discord.Client> {
 
   await client.login(process.env.TOKEN);
   return client;
-}
-
-async function getSession(socket: SocketIO.Socket): Promise<UserInfo | undefined> {
-  let sessionID;
-  console.log(socket.handshake.headers);
-  socket.handshake.headers.cookie.split('; ').forEach((cookie: string) => {
-    if (cookie.startsWith('sessionID')) {
-      sessionID = decodeURIComponent(cookie.split('=')[1]);
-    }
-  });
-  console.log(`Get session ${sessionID}`)
-  if (sessionID) {
-    return await sessionMap.getRenewAsync(sessionID);
-  }
-  return undefined;
 }
