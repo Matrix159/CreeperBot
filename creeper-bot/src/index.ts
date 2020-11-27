@@ -17,6 +17,7 @@ const socketMap: Map<string, UserInfo> = new Map();
 /** Guild ID -> Discord.StreamDispatcher */
 type MusicControllerMap = Map<string, {
   dispatcher?: Discord.StreamDispatcher;
+  voiceConnection?: Discord.VoiceConnection;
   queue?: QueueObject[];
 }>;
 const musicControllerMap: MusicControllerMap = new Map();
@@ -152,6 +153,12 @@ async function setupDiscord(): Promise<Discord.Client> {
     try {
       if (message.content.startsWith('$play') && message.member?.voice.channel && message.guild?.id) {
         const song = message.content.split(" ").slice(1).join(" ");
+        const musicController = musicControllerMap.get(message.guild.id);
+        if (musicController) {
+          musicController.voiceConnection = await message.member.voice.channel.join();
+        } else {
+          musicControllerMap.set(message.guild.id, { voiceConnection: await message.member.voice.channel.join() });
+        }
         await playSong(musicControllerMap, message, song);
         socketMap.get(message.member.user.id)?.socket.emit('music-start', message.guild.id);
 
@@ -185,10 +192,16 @@ async function setupDiscord(): Promise<Discord.Client> {
         resumeSong(musicControllerMap, message);
       }
 
-      if (message.content.startsWith('$spotify')) {
+      if (message.content.startsWith('$spotify') && message.member?.voice.channel && message.guild?.id) {
         const messageArgArray = message.content.split(' ');
         if (messageArgArray.length > 2) {
           message.channel.send(`Please enter the command as \`$spotify [spotifyPlaylistId]\``);
+        }
+        const musicController = musicControllerMap.get(message.guild.id);
+        if (musicController) {
+          musicController.voiceConnection = await message.member.voice.channel.join();
+        } else {
+          musicControllerMap.set(message.guild.id, { voiceConnection: await message.member.voice.channel.join() });
         }
         const playlistId = messageArgArray.slice(1).join(" ");
         const spotifyAccessCode = await getSpotifyAccessCode();
@@ -268,12 +281,14 @@ async function setupDiscord(): Promise<Discord.Client> {
 }
 
 async function playSong(musicControllerMap: MusicControllerMap, message: Message, songName: string) {
-  // Only try to join the sender's voice channel if they are in one themselves
-  if (message.member?.voice.channel && message.guild?.id) {
-    try {
 
+  if (!message.guild?.id) return;
+
+  let controller = musicControllerMap.get(message.guild.id);
+
+  if (controller && controller.voiceConnection) {
+    try {
       // If the queue exists we will just add it instead
-      const controller = musicControllerMap.get(message.guild.id);
       if (controller?.queue) {
         await queueSong(musicControllerMap, message, songName);
         return;
@@ -289,14 +304,13 @@ async function playSong(musicControllerMap: MusicControllerMap, message: Message
       const videoTitle = videoResult.title;
       console.log(`Playing youtube video: URL (${videoURL}) Title (${videoTitle})`);
 
-      const connection = await message.member.voice.channel.join();
-      const dispatcher = connection.play(ytdl(videoURL), { highWaterMark: 1 << 25, volume: 0.50 });
-      musicControllerMap.set(message.guild.id, { dispatcher, queue: [] });
+      const dispatcher = controller.voiceConnection.play(ytdl(videoURL), { highWaterMark: 200, volume: 0.75 });
+      controller.dispatcher = dispatcher;
+      controller.queue = [];
       dispatcher.on('finish', async function () {
         console.log(`Song ${videoTitle} finished`);
         await playNextSong(musicControllerMap, message);
       });
-
       await message.channel.send(`Playing: ${videoTitle}`);
     } catch (error) {
       console.log(error);
@@ -305,7 +319,11 @@ async function playSong(musicControllerMap: MusicControllerMap, message: Message
 }
 
 async function queueSong(musicControllerMap: MusicControllerMap, message: Message, songName: string) {
-  if (message.guild?.id) {
+  if (!message.guild?.id) return;
+
+  const controller = musicControllerMap.get(message.guild.id);
+  if (controller)
+  {
     const results = await youtube.search(songName) as any;
     const videoResult = results.videos[0];
 
@@ -317,29 +335,36 @@ async function queueSong(musicControllerMap: MusicControllerMap, message: Messag
     const videoTitle = videoResult.title;
 
     console.log(`Queueing youtube video: URL (${videoURL}) Title (${videoTitle})`);
-    const controller = musicControllerMap.get(message.guild.id);
-    if (controller)
-    {
-      controller.queue = controller.queue ?? [];
-      controller.queue.push({songName: videoTitle, url: videoURL});
-      // await message.channel.send(`Queueing up: ${videoResult.title}`);
-    }
+
+    controller.queue = controller.queue ?? [];
+    controller.queue.push({songName: videoTitle, url: videoURL});
+    // await message.channel.send(`Queueing up: ${videoResult.title}`);
   }
 }
 
 async function playNextSong(musicControllerMap: MusicControllerMap, message: Message) {
-  if (message.member?.voice.channel && message.guild?.id) {
+  if (!message.guild?.id) return;
+
+  const controller = musicControllerMap.get(message.guild.id);
+
+  if (controller && controller.voiceConnection) {
     const queue = musicControllerMap.get(message.guild!.id)?.queue ?? [];
     const songObject = queue.shift(); //shift the queue
     if (songObject) {
       console.log(`Searching for song ${songObject.songName}`);
-      const connection = await message.member.voice.channel.join()
-      const dispatcher = connection.play(await ytdl(songObject.url), { highWaterMark: 1 << 25 });
-      musicControllerMap.set(message.guild!.id, { dispatcher, queue });
+
+      const dispatcher = controller.voiceConnection.play(await ytdl(songObject.url), { highWaterMark: 200, volume: 0.75 });
+      dispatcher.on('finish', async function () {
+        console.log(`Song ${songObject.songName} finished`);
+        await playNextSong(musicControllerMap, message);
+      });
+      controller.dispatcher = dispatcher;
+      controller.queue = queue;
       await message.channel.send(`Playing next in queue: ${songObject.songName}`);
     } else {
       // Nothing in queue, clear out dispatcher and queue array
-      musicControllerMap.set(message.guild!.id, {});
+      controller.dispatcher = undefined;
+      controller.queue = undefined;
       await message.channel.send(`There is nothing in the queue.`);
     }
   }

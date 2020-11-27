@@ -22,8 +22,8 @@ export async function getSpotifyTracksByPlaylist(playlistId: string, accessToken
     }
   })).data as any;
 
-  return data.items.map((item: any) => {
-    const artists = item.track.artists.map((artist: any) => artist.name).join(" ");
-    return `${item.track.name} ${artists}`;
+  return data.items.slice(0, 100).filter((item: any) => !!item.track?.name).map((item: any) => {
+    const artists = item.track.artists?.map((artist: any) => artist.name).join(" ");
+    return `${item.track.name} ${artists ?? ''}`;
   });
 }
