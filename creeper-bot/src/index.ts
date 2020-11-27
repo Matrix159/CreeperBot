@@ -19,6 +19,7 @@ type MusicControllerMap = Map<string, {
   dispatcher?: Discord.StreamDispatcher;
   voiceConnection?: Discord.VoiceConnection;
   queue?: QueueObject[];
+  shuffleMode: boolean;
 }>;
 const musicControllerMap: MusicControllerMap = new Map();
 
@@ -157,7 +158,7 @@ async function setupDiscord(): Promise<Discord.Client> {
         if (musicController) {
           musicController.voiceConnection = await message.member.voice.channel.join();
         } else {
-          musicControllerMap.set(message.guild.id, { voiceConnection: await message.member.voice.channel.join() });
+          musicControllerMap.set(message.guild.id, { voiceConnection: await message.member.voice.channel.join(), shuffleMode: false });
         }
         await playSong(musicControllerMap, message, song);
         socketMap.get(message.member.user.id)?.socket.emit('music-start', message.guild.id);
@@ -201,7 +202,7 @@ async function setupDiscord(): Promise<Discord.Client> {
         if (musicController) {
           musicController.voiceConnection = await message.member.voice.channel.join();
         } else {
-          musicControllerMap.set(message.guild.id, { voiceConnection: await message.member.voice.channel.join() });
+          musicControllerMap.set(message.guild.id, { voiceConnection: await message.member.voice.channel.join(), shuffleMode: false });
         }
         const playlistId = messageArgArray.slice(1).join(" ");
         const spotifyAccessCode = await getSpotifyAccessCode();
@@ -222,6 +223,10 @@ async function setupDiscord(): Promise<Discord.Client> {
         } else {
           message.channel.send('There is no music currently queued.');
         }
+      }
+
+      if (message.content.startsWith('$shuffle') && message.guild?.id) {
+        toggleShuffleMode(musicControllerMap, message);
       }
 
       if (message.content.startsWith('$nuke') && message.guild?.id) {
@@ -349,13 +354,20 @@ async function playNextSong(musicControllerMap: MusicControllerMap, message: Mes
 
   if (controller && controller.voiceConnection) {
     const queue = musicControllerMap.get(message.guild!.id)?.queue ?? [];
-    const songObject = queue.shift(); //shift the queue
+    let songObject: QueueObject | undefined;
+    if (controller.shuffleMode && queue.length) {
+      const index = Math.floor(Math.random() * queue.length);
+      songObject = queue.splice(index, 1)[0];
+    } else {
+      songObject = queue.shift(); //shift the queue
+    }
+
     if (songObject) {
       console.log(`Searching for song ${songObject.songName}`);
 
       const dispatcher = controller.voiceConnection.play(await ytdl(songObject.url), { highWaterMark: 200, volume: 0.75 });
       dispatcher.on('finish', async function () {
-        console.log(`Song ${songObject.songName} finished`);
+        console.log(`Song ${songObject!.songName} finished`);
         await playNextSong(musicControllerMap, message);
       });
       controller.dispatcher = dispatcher;
@@ -383,5 +395,15 @@ function resumeSong(musicControllerMap: MusicControllerMap, message: Message) {
   if (controller?.dispatcher) {
     console.log(`Resuming song at guild: ${message.guild?.id}`);
     controller.dispatcher.resume();
+  }
+}
+
+function toggleShuffleMode(musicControllerMap: MusicControllerMap, message: Message) {
+  if (!message.guild?.id) return;
+
+  const controller = musicControllerMap.get(message.guild.id);
+  if (controller) {
+    controller.shuffleMode = !controller.shuffleMode;
+    message.channel?.send(`Turning shuffle mode ${controller.shuffleMode ? 'on' : 'off'}`);
   }
 }
