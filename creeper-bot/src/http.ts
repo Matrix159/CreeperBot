@@ -83,6 +83,12 @@ app.post('/login', async (req, res) => {
   res.sendStatus(400);
 });
 
+app.get('/spotify-auth', (req, res) => {
+  console.log(req.query);
+
+  res.sendStatus(200);
+});
+
 function generateKey() {
   // 16 bytes is likely to be more than enough,
   // but you may tweak it to your needs

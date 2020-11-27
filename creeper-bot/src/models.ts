@@ -34,3 +34,15 @@ export interface UserInfo {
   snowflake: string;
   socket: Socket;
 }
+
+export interface QueueObject {
+  url: string;
+  songName: string;
+}
+
+export interface DiscordSocket extends Socket {
+  decoded_token: {
+    snowflake: string,
+    username: string,
+  }
+}

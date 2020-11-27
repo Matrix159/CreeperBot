@@ -1,28 +1,25 @@
 import Dotenv from 'dotenv';
 Dotenv.config();
-import Discord from 'discord.js';
-import { Guild, UserInfo } from './models';
+import Discord, { Message } from 'discord.js';
+import { DiscordSocket, Guild, QueueObject, UserInfo } from './models';
 import { creeperInfo } from './state';
 import { io, setupHttpServer } from './http';
-import { Socket } from 'socket.io';
 import ytdl from 'ytdl-core';
 import { watchUser, unwatchUser, getUsersWatching, getWatchedUsers} from './database';
 import socketioJwt from 'socketio-jwt';
-import Timeout = NodeJS.Timeout;
+import youtube from 'scrape-youtube';
+import { getSpotifyAccessCode, getSpotifyTracksByPlaylist } from './spotify';
 
 let client: Discord.Client;
 
 /** User snowflake -> UserInfo */
 const socketMap: Map<string, UserInfo> = new Map();
 /** Guild ID -> Discord.StreamDispatcher */
-const dispatcherMap: Map<string, Discord.StreamDispatcher> = new Map();
-
-interface DiscordSocket extends Socket {
-  decoded_token: {
-    snowflake: string,
-    username: string,
-  }
-}
+type MusicControllerMap = Map<string, {
+  dispatcher?: Discord.StreamDispatcher;
+  queue?: QueueObject[];
+}>;
+const musicControllerMap: MusicControllerMap = new Map();
 
 // Socket server
 (async () => {
@@ -63,22 +60,36 @@ interface DiscordSocket extends Socket {
     });
 
     socket.on('play-pause',  (event) => {
-      const dispatcher = dispatcherMap.get(event.guildId);
+      const dispatcher = musicControllerMap.get(event.guildId)?.dispatcher;
       if (dispatcher) {
         if (!event.playing) {
           dispatcher.resume();
         } else {
-          dispatcher.pause();
+          dispatcher.pause(true);
         }
       }
     });
 
     socket.on('volume-change', (event) => {
-      const dispatcher = dispatcherMap.get(event.guildId);
+      const dispatcher = musicControllerMap.get(event.guildId)?.dispatcher;
       if (dispatcher) {
         console.log(event.volume / 100);
         dispatcher.setVolume(event.volume / 100);
       }
+    });
+
+    socket.on('queue', (event) => {
+      console.log('Queue event received');
+      const queue = musicControllerMap.get(event.guildId)?.queue;
+      if (queue) {
+        queue.push({ songName: event.songName, url: event.url});
+        console.log(`Queued song: ${event.songName}`);
+      }
+    });
+
+    socket.on('search-youtube', async (searchValue, callback) => {
+      console.log(searchValue);
+      callback(await youtube.search(searchValue));
     });
 
     await gatherAndSendInfo(socket.decoded_token.snowflake);
@@ -138,40 +149,90 @@ async function setupDiscord(): Promise<Discord.Client> {
   });
 
   client.on('message', async message => {
-    // Voice only works in guilds, if the message does not come from a guild,
-    // we ignore it
-    if (!message.guild) return;
+    try {
+      if (message.content.startsWith('$play') && message.member?.voice.channel && message.guild?.id) {
+        const song = message.content.split(" ").slice(1).join(" ");
+        await playSong(musicControllerMap, message, song);
+        socketMap.get(message.member.user.id)?.socket.emit('music-start', message.guild.id);
 
-    if (message.content.startsWith('/join')) {
-      // Only try to join the sender's voice channel if they are in one themselves
-      if (message.member?.voice.channel && message.guild?.id) {
-        try {
-          const connection = await message.member.voice.channel.join();
-          const dispatcher = connection.play(ytdl(message.content.split(" ")[1], { filter: 'audioonly' }));
-
-          let timeout: Timeout|undefined;
-          dispatcher.on('speaking', speaking =>  {
-            if (!speaking) {
-              console.log('Speaking false');
-              timeout = setTimeout(() => {
-                connection.disconnect();
-                dispatcherMap.delete(message.guild!.id);
-                console.log('Left voice channel');
-              }, 5* 60 * 1000)
-            } else {
-              if (timeout) {
-                console.log('Clearing timeout');
-                clearTimeout(timeout);
-                timeout = undefined;
-              }
+        /*let timeout: Timeout|undefined;
+        dispatcher.on('speaking', speaking =>  {
+          if (!speaking) {
+            console.log('Speaking false');
+            timeout = setTimeout(() => {
+              connection.disconnect();
+              musicControllerMap.delete(message.guild!.id);
+              console.log('Left voice channel');
+            }, 5* 60 * 1000)
+          } else {
+            if (timeout) {
+              console.log('Clearing timeout');
+              clearTimeout(timeout);
+              timeout = undefined;
             }
-          });
-          dispatcherMap.set(message.guild.id, dispatcher);
-          socketMap.get(message.member.user.id)?.socket.emit('music-start', message.guild.id);
-        } catch (error) {
-          console.log(error);
+          }
+        });*/
+      }
+      if (message.content.startsWith('$next')) {
+        await playNextSong(musicControllerMap, message);
+      }
+
+      if (message.content.startsWith('$pause')) {
+        pauseSong(musicControllerMap, message);
+      }
+
+      if (message.content.startsWith('$resume')) {
+        resumeSong(musicControllerMap, message);
+      }
+
+      if (message.content.startsWith('$spotify')) {
+        const messageArgArray = message.content.split(' ');
+        if (messageArgArray.length > 2) {
+          message.channel.send(`Please enter the command as \`$spotify [spotifyPlaylistId]\``);
+        }
+        const playlistId = messageArgArray.slice(1).join(" ");
+        const spotifyAccessCode = await getSpotifyAccessCode();
+        console.log(spotifyAccessCode);
+        const songList = await getSpotifyTracksByPlaylist(playlistId, spotifyAccessCode);
+        console.log(songList);
+
+        for (let songName of songList) {
+          await playSong(musicControllerMap, message, songName);
         }
       }
+
+      if ((message.content.startsWith('$queue') || message.content.startsWith('$q')) && message.guild?.id) {
+        const queue = musicControllerMap.get(message.guild.id)?.queue ?? [];
+        const queueMessage = queue.map((queueItem, index) => `${index + 1}: ${queueItem.songName} ${queueItem.songName}`).join('\n').toString().slice(0, 2000);
+        if (queueMessage) {
+          message.channel.send(queueMessage);
+        } else {
+          message.channel.send('There is no music currently queued.');
+        }
+      }
+
+      if (message.content.startsWith('$nuke') && message.guild?.id) {
+        const controller = musicControllerMap.get(message.guild.id);
+        if (controller?.queue && controller.queue?.length) {
+          controller.queue = [];
+          message.channel.send('Nuking this muthafuckin\' queue');
+        }
+      }
+      /* EXPERIMENTAL if (message.content.startsWith('$listen')) {
+        if (message.member?.voice.channel && message.guild?.id) {
+          try {
+            console.log('Listening');
+            const connection = await message.member.voice.channel.join();
+            const audio = connection.receiver.createStream('userID', { mode: 'pcm' });
+            audio.
+            connection.play(audio);
+          } catch(error) {
+            console.error(error);
+          }
+        }
+      } */
+    } catch (error) {
+      console.error(error);
     }
   });
 
@@ -191,36 +252,111 @@ async function setupDiscord(): Promise<Discord.Client> {
         const user = await client.users.fetch(userWatching);
         await user.send(message);
       }
-      //if (newState?.member?.id != '98992981045964800') {
-      /*client.users.fetch('98992981045964800').then((user) => {
-        user.send(message);
-      });*/
-      //}
-      // await gatherAndSendInfo(clientSocket);
     } else if(newUserChannel == undefined){
       console.log("User left")
       // User leaves a voice channel
       const message = `User ${newState?.member?.user.username} left channel ${oldUserChannel?.name} at ${new Date().toString()}`;
       creeperInfo.messages.push(message);
-      /*client.users.fetch('98992981045964800').then((user) => {
-        user.send(message);
-      });*/
-      // await gatherAndSendInfo(clientSocket);
     }
-
-    /*if (newState.channel != null) {
-      const message = `User ${newState?.member?.user.username} joined channel ${newState.channel.name} at ${new Date().toString()}`
-      console.log(message);
-      console.log( {
-        avatarURL: newState?.member?.user.displayAvatarURL(),
-        username: newState?.member?.user.username
-      } as User);
-     if (newState?.member?.id && !userIDs.includes(newState.member.id)) {
-        userIDs.push(newState.member.id);
-     }
-    }*/
   });
 
+  client.on('debug', (event) => {
+   //console.log(event);
+  });
   await client.login(process.env.TOKEN);
   return client;
+}
+
+async function playSong(musicControllerMap: MusicControllerMap, message: Message, songName: string) {
+  // Only try to join the sender's voice channel if they are in one themselves
+  if (message.member?.voice.channel && message.guild?.id) {
+    try {
+
+      // If the queue exists we will just add it instead
+      const controller = musicControllerMap.get(message.guild.id);
+      if (controller?.queue) {
+        await queueSong(musicControllerMap, message, songName);
+        return;
+      }
+
+      const results = await youtube.search(songName) as any;
+      const videoResult = results.videos[0];
+      if (!videoResult) {
+        console.log(`Couldn't find ${songName} on youtube`);
+        return;
+      }
+      const videoURL = videoResult.link;
+      const videoTitle = videoResult.title;
+      console.log(`Playing youtube video: URL (${videoURL}) Title (${videoTitle})`);
+
+      const connection = await message.member.voice.channel.join();
+      const dispatcher = connection.play(ytdl(videoURL), { highWaterMark: 1 << 25, volume: 0.50 });
+      musicControllerMap.set(message.guild.id, { dispatcher, queue: [] });
+      dispatcher.on('finish', async function () {
+        console.log(`Song ${videoTitle} finished`);
+        await playNextSong(musicControllerMap, message);
+      });
+
+      await message.channel.send(`Playing: ${videoTitle}`);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+}
+
+async function queueSong(musicControllerMap: MusicControllerMap, message: Message, songName: string) {
+  if (message.guild?.id) {
+    const results = await youtube.search(songName) as any;
+    const videoResult = results.videos[0];
+
+    if (!videoResult) {
+      console.log(`Couldn't find ${songName} on youtube`);
+      return;
+    }
+    const videoURL = videoResult.link;
+    const videoTitle = videoResult.title;
+
+    console.log(`Queueing youtube video: URL (${videoURL}) Title (${videoTitle})`);
+    const controller = musicControllerMap.get(message.guild.id);
+    if (controller)
+    {
+      controller.queue = controller.queue ?? [];
+      controller.queue.push({songName: videoTitle, url: videoURL});
+      // await message.channel.send(`Queueing up: ${videoResult.title}`);
+    }
+  }
+}
+
+async function playNextSong(musicControllerMap: MusicControllerMap, message: Message) {
+  if (message.member?.voice.channel && message.guild?.id) {
+    const queue = musicControllerMap.get(message.guild!.id)?.queue ?? [];
+    const songObject = queue.shift(); //shift the queue
+    if (songObject) {
+      console.log(`Searching for song ${songObject.songName}`);
+      const connection = await message.member.voice.channel.join()
+      const dispatcher = connection.play(await ytdl(songObject.url), { highWaterMark: 1 << 25 });
+      musicControllerMap.set(message.guild!.id, { dispatcher, queue });
+      await message.channel.send(`Playing next in queue: ${songObject.songName}`);
+    } else {
+      // Nothing in queue, clear out dispatcher and queue array
+      musicControllerMap.set(message.guild!.id, {});
+      await message.channel.send(`There is nothing in the queue.`);
+    }
+  }
+}
+
+function pauseSong(musicControllerMap: MusicControllerMap, message: Message) {
+  const controller = musicControllerMap.get(message.guild?.id ?? '');
+  if (controller?.dispatcher) {
+    console.log(`Pausing song at guild: ${message.guild?.id}`);
+    controller.dispatcher.pause();
+  }
+}
+
+function resumeSong(musicControllerMap: MusicControllerMap, message: Message) {
+  const controller = musicControllerMap.get(message.guild?.id ?? '');
+  if (controller?.dispatcher) {
+    console.log(`Resuming song at guild: ${message.guild?.id}`);
+    controller.dispatcher.resume();
+  }
 }
