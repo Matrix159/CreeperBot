@@ -2,26 +2,15 @@ import Dotenv from 'dotenv';
 Dotenv.config();
 import Discord, { Message } from 'discord.js';
 import { DiscordSocket, Guild, QueueObject, UserInfo } from './models';
-import { creeperInfo } from './state';
+import { creeperInfo, MusicControllerMap, musicControllerMap, socketMap } from './state';
 import { io, setupHttpServer } from './http';
 import ytdl from 'ytdl-core';
 import { watchUser, unwatchUser, getUsersWatching, getWatchedUsers} from './database';
 import socketioJwt from 'socketio-jwt';
 import youtube from 'scrape-youtube';
-import { getSpotifyAccessCode, getSpotifyTracksByPlaylist } from './spotify';
+import { commands } from './commands';
 
 let client: Discord.Client;
-
-/** User snowflake -> UserInfo */
-const socketMap: Map<string, UserInfo> = new Map();
-/** Guild ID -> Discord.StreamDispatcher */
-type MusicControllerMap = Map<string, {
-  dispatcher?: Discord.StreamDispatcher;
-  voiceConnection?: Discord.VoiceConnection;
-  queue?: QueueObject[];
-  shuffleMode: boolean;
-}>;
-const musicControllerMap: MusicControllerMap = new Map();
 
 // Socket server
 (async () => {
@@ -146,23 +135,21 @@ async function setupDiscord(): Promise<Discord.Client> {
       }
     }
   });
+
   client.once('ready', async () => {
     console.log('Ready!');
   });
 
   client.on('message', async message => {
     try {
-      if (message.content.startsWith('$play') && message.member?.voice.channel && message.guild?.id) {
-        const song = message.content.split(" ").slice(1).join(" ");
-        const musicController = musicControllerMap.get(message.guild.id);
-        if (musicController) {
-          musicController.voiceConnection = await message.member.voice.channel.join();
-        } else {
-          musicControllerMap.set(message.guild.id, { voiceConnection: await message.member.voice.channel.join(), shuffleMode: false });
-        }
-        await playSong(musicControllerMap, message, song);
-        socketMap.get(message.member.user.id)?.socket.emit('music-start', message.guild.id);
+      const args = message.content.slice(process.env.COMMAND_PREFIX!.length).trim().split(/ +/);
+      const command = args.shift()?.toLowerCase() ?? '';
 
+      if (/*!commands.has(command) || */message.author.bot) return;
+
+      commands.get(command)?.execute(message, args.join(' '));
+
+      if (message.content.startsWith('$play') && message.member?.voice.channel && message.guild?.id) {
         /*let timeout: Timeout|undefined;
         dispatcher.on('speaking', speaking =>  {
           if (!speaking) {
@@ -194,7 +181,7 @@ async function setupDiscord(): Promise<Discord.Client> {
       }
 
       if (message.content.startsWith('$spotify') && message.member?.voice.channel && message.guild?.id) {
-        const messageArgArray = message.content.split(' ');
+        /*const messageArgArray = message.content.split(' ');
         if (messageArgArray.length > 2) {
           message.channel.send(`Please enter the command as \`$spotify [spotifyPlaylistId]\``);
         }
@@ -212,7 +199,7 @@ async function setupDiscord(): Promise<Discord.Client> {
 
         for (let songName of songList) {
           await playSong(musicControllerMap, message, songName);
-        }
+        }*/
       }
 
       if ((message.content.startsWith('$queue') || message.content.startsWith('$q')) && message.guild?.id) {
@@ -285,7 +272,7 @@ async function setupDiscord(): Promise<Discord.Client> {
   return client;
 }
 
-async function playSong(musicControllerMap: MusicControllerMap, message: Message, songName: string) {
+export async function playSong(musicControllerMap: MusicControllerMap, message: Message, songName: string, logQueueMessage: boolean = true) {
 
   if (!message.guild?.id) return;
 
@@ -295,7 +282,7 @@ async function playSong(musicControllerMap: MusicControllerMap, message: Message
     try {
       // If the queue exists we will just add it instead
       if (controller?.queue) {
-        await queueSong(musicControllerMap, message, songName);
+        await queueSong(musicControllerMap, message, songName, logQueueMessage);
         return;
       }
 
@@ -316,14 +303,14 @@ async function playSong(musicControllerMap: MusicControllerMap, message: Message
         console.log(`Song ${videoTitle} finished`);
         await playNextSong(musicControllerMap, message);
       });
-      await message.channel.send(`Playing: ${videoTitle}`);
+      await message.channel.send(`Playing: ${videoTitle} ${videoURL}`);
     } catch (error) {
       console.log(error);
     }
   }
 }
 
-async function queueSong(musicControllerMap: MusicControllerMap, message: Message, songName: string) {
+async function queueSong(musicControllerMap: MusicControllerMap, message: Message, songName: string, logQueueMessage: boolean) {
   if (!message.guild?.id) return;
 
   const controller = musicControllerMap.get(message.guild.id);
@@ -339,15 +326,17 @@ async function queueSong(musicControllerMap: MusicControllerMap, message: Messag
     const videoURL = videoResult.link;
     const videoTitle = videoResult.title;
 
-    console.log(`Queueing youtube video: URL (${videoURL}) Title (${videoTitle})`);
+    console.log(`Queueing youtube video: ${videoTitle} ${videoURL}`);
 
     controller.queue = controller.queue ?? [];
     controller.queue.push({songName: videoTitle, url: videoURL});
-    // await message.channel.send(`Queueing up: ${videoResult.title}`);
+    if (logQueueMessage) {
+      await message.channel.send(`Queueing up: ${videoTitle} ${videoURL}`);
+    }
   }
 }
 
-async function playNextSong(musicControllerMap: MusicControllerMap, message: Message) {
+export async function playNextSong(musicControllerMap: MusicControllerMap, message: Message) {
   if (!message.guild?.id) return;
 
   const controller = musicControllerMap.get(message.guild.id);
@@ -372,7 +361,7 @@ async function playNextSong(musicControllerMap: MusicControllerMap, message: Mes
       });
       controller.dispatcher = dispatcher;
       controller.queue = queue;
-      await message.channel.send(`Playing next in queue: ${songObject.songName}`);
+      await message.channel.send(`Playing next in queue: ${songObject.songName} ${songObject.url}`);
     } else {
       // Nothing in queue, clear out dispatcher and queue array
       controller.dispatcher = undefined;
