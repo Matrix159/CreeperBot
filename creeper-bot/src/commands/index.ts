@@ -1,18 +1,31 @@
-import { Message } from 'discord.js';
+import { Collection, Message } from 'discord.js';
 import playCommand from './play';
+import pauseCommand from './pause';
+import resumeCommand from './resume';
 import spotifyCommand from './spotify';
 import skipCommand from './skip';
+import queueCommand from './queue';
 import leaveCommand from './leave';
+import shuffleCommand from './shuffle';
+import nukeCommand from './nuke';
+import popCommand from './pop';
 
 export interface Command {
   name: string;
   description: string;
+  aliases?: string[];
   execute: (message: Message, messageArgs: string) => void;
 }
-const commands: Map<string, Command> = new Map([
+const commands: Collection<string, Command> = new Collection([
   [playCommand.name, playCommand],
   [spotifyCommand.name, spotifyCommand],
+  [pauseCommand.name, pauseCommand],
+  [resumeCommand.name, resumeCommand],
   [skipCommand.name, skipCommand],
+  [popCommand.name, popCommand],
+  [shuffleCommand.name, shuffleCommand],
+  [queueCommand.name, queueCommand],
+  [nukeCommand.name, nukeCommand],
   [leaveCommand.name, leaveCommand],
 ]);
 

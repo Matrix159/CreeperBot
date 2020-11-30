@@ -14,7 +14,7 @@ const httpServer = http.createServer(app);
 export const io = socketio(httpServer);
 
 app.use(cors({
-  origin: ['http://localhost:8080', 'http://localhost:3000', 'http://192.168.86.138:8080'],
+  origin: ['http://localhost:8080', 'http://192.168.86.138:8080', 'http://eldridge-pi.ddns.net:8080'],
   credentials: true
 }));
 app.use(bodyparser.json());
@@ -83,12 +83,6 @@ app.post('/login', async (req, res) => {
   res.sendStatus(400);
 });
 
-app.get('/spotify-auth', (req, res) => {
-  console.log(req.query);
-
-  res.sendStatus(200);
-});
-
 function generateKey() {
   // 16 bytes is likely to be more than enough,
   // but you may tweak it to your needs
@@ -99,7 +93,6 @@ export const setupHttpServer = async () => {
   httpServer.listen(3000, () => {
     console.log('listening on *:3000');
   });
-  return;
 };
 
 export function createQueryString(data = {}): string {

@@ -1,8 +1,8 @@
 import { Command } from './index';
 import { Message } from 'discord.js';
 import { musicControllerMap } from '../state';
-import { playSong } from '../index';
 import { getSpotifyAccessCode, getSpotifyTracksByPlaylist } from '../spotify';
+import { playSong } from '../discord';
 
 export default {
   name: 'spotify',
