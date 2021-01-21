@@ -26,7 +26,7 @@
     "pg": "^8.5.1",
     "rxjs": "^6.6.3",
     "scrape-youtube": "^2.0.2",
-    "socket.io": "^2.3.0",
+    "socket.io": "^2.4.0",
     "socketio-jwt": "^4.6.2",
     "ytdl-core": "^4.1.0"
   },
